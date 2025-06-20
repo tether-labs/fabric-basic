@@ -37,7 +37,7 @@
     // internet connectivity.
     .dependencies = .{
         .fabric = .{
-            .url = "zig fetch https://github.com/vic-Rokx/fabric/archive/refs/tags/v1.0.0.tar.gz",
+            .url = "zig fetch https://github.com/vic-Rokx/fabric/archive/refs/tags/v1.1.0.tar.gz",
             .hash = "...",
         },
 
