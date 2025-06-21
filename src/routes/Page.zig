@@ -6,7 +6,7 @@ const Pure = Fabric.Pure;
 const Style = Fabric.Style;
 var counter: *Signal(u32) = undefined;
 pub fn init() void {
-    counter = Signal(u32).init(0, &Fabric.lib.allocator_global);
+    counter = Signal(u32).init(0);
     Fabric.Page(@src(), render, null, Style.apply(.{
         .width = .percent(1),
         .height = .percent(1),
