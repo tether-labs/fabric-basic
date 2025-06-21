@@ -22,7 +22,6 @@ export fn instantiate(window_width: i32, window_height: i32) void {
 export fn renderCommands(route_ptr: [*:0]u8) i32 {
     const route = std.mem.span(route_ptr);
     fabric.renderCycle(route);
-    fabric.lib.allocator_global.free(route);
     return 0;
 }
 
