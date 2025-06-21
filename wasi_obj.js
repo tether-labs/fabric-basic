@@ -150,7 +150,7 @@ window.addEventListener("load", async () => {
 
 async function loadWasiModule() {
   let pathname = window.location.pathname;
-  pathname = "fabric";
+  pathname = "fabric-optimized";
   WebAssembly.instantiateStreaming(
     fetch(`zig-out/bin/${pathname}.wasm`),
     importObject,

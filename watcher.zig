@@ -10,8 +10,24 @@ const log = std.log;
 
 const color = "\x1b[35m"; // ANSI escape code for red color
 const background = "\x1b[36m"; // ANSI escape code for red color
-const reset = "\x1b[0m"; // ANSI escape code to reset color
 const bold = "\x1b[1m"; // ANSI escape code to reset color
+const bright_black = "\x1b[90m"; // Bright black (gray)
+const bright_red = "\x1b[91m"; // Bright red
+const bright_green = "\x1b[92m"; // Bright green
+const bright_yellow = "\x1b[93m"; // Bright yellow
+const bright_blue = "\x1b[94m"; // Bright blue
+const bright_magenta = "\x1b[95m"; // Bright magenta
+const bright_cyan = "\x1b[96m"; // Bright cyan
+const bright_white = "\x1b[97m"; // Bright white
+const reset = "\x1b[0m"; // Reset all formatting
+const black = "\x1b[30m"; // Black text
+const red = "\x1b[31m"; // Red text
+const green = "\x1b[32m"; // Green text
+const yellow = "\x1b[33m"; // Yellow text
+const blue = "\x1b[34m"; // Blue text
+const magenta = "\x1b[35m"; // Magenta text
+const cyan = "\x1b[36m"; // Cyan text
+const white = "\x1b[37m"; // White text
 
 pub const Config = struct {
     watch_paths: []const []const u8 = &.{"src"}, // Directories to watch:set noreadonly
@@ -258,8 +274,19 @@ pub fn openLocalFile(conn: std.net.Server.Connection, mime: []const u8, mimetype
 }
 
 fn watchFiles(self: *WatchContext, chan: *Chan(u8)) !void {
-    log.info("Starting Zig development server...", .{});
-    log.info("Watching directories: {s}", .{self.config.watch_paths});
+    // const watcher_title =
+    //     \\  _      __     __      __          
+    //     \\ | | /| / /__ _/ /_____/ /  ___ ____
+    //     \\ | |/ |/ / _ `/ __/ __/ _ \/ -_) __/
+    //     \\ |__/|__/\_,_/\__/\__/_//_/\__/_/   
+    // ;
+    //
+    // std.debug.print("{s}{s}{s}\n", .{
+    //     white,
+    //     // bold,
+    //     watcher_title,
+    //     reset,
+    // });
 
     for (self.config.watch_paths) |watch_path| {
         var dir = try fs.cwd().openDir(watch_path, .{ .iterate = true });
@@ -296,7 +323,7 @@ fn watchFiles(self: *WatchContext, chan: *Chan(u8)) !void {
 
             while (try walker.next()) |entry| {
                 const path = try std.fs.path.join(self.allocator, &.{ watch_path, entry.path });
-                // defer self.allocator.free(path);
+                defer self.allocator.free(path);
 
                 if (!self.shouldWatch(path)) continue;
                 const stat = try fs.cwd().statFile(path);
@@ -304,7 +331,6 @@ fn watchFiles(self: *WatchContext, chan: *Chan(u8)) !void {
                 const stored_time = self.last_mod_times.get(path);
                 if (stored_time == null or stored_time.? != mod_time) {
                     changed_path = path;
-                    // std.debug.print("{s}\n", .{path});
                     try self.last_mod_times.put(path, mod_time);
                     changed = true;
                 }
@@ -407,12 +433,11 @@ pub fn main() !void {
 
             const self_addr = try std.net.Address.resolveIp("0.0.0.0", 5173);
             var listener = try self_addr.listen(.{ .reuse_address = true });
-            std.debug.print("Listening on {}\n", .{self_addr});
+            std.debug.print("{s}{s}Listening on http://localhost:5173{s}\n", .{bold, white, reset});
             var ws: bool = false;
 
             while (true) {
                 var conn = try listener.accept();
-                std.debug.print("Accepted connection from: {}\n", .{conn.address});
                 var recv_buf: [4096]u8 = undefined;
                 var recv_total: usize = 0;
                 while (conn.stream.read(recv_buf[recv_total..])) |recv_len| {
