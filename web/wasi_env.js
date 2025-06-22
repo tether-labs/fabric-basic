@@ -551,7 +551,7 @@ export const importObject = {
 
     // Wrapper to make WASM s return promises
     zigFunctionReturningPromise(wasmInstance) {
-      return async function(arg1, arg2) {
+      return async function (arg1, arg2) {
         // Call the WASM function which returns a promise ID
         const promiseId = wasmInstance.exports.onMount(arg1, arg2);
 
@@ -684,7 +684,7 @@ export const importObject = {
         return;
       }
 
-      console.log(element);
+console.log(element);
       element.click();
     },
     mutateDomElementStyleWasm: (
@@ -1023,28 +1023,21 @@ export const importObject = {
     //   }
     // },
 
-    js_fetch: (urlPtr, urlLen, callback_id, httpPtr, httpLen) => {
+    js_fetch: (urlPtr, urlLen, callback_id) => {
       // Decode URL string out of WASM memory
-
-      const url = readWasmString(urlPtr, urlLen);
-      const data = readWasmString(httpPtr, httpLen);
-
-      const Request = JSON.parse(data);
+      const urlBytes = new Uint8Array(
+        wasmInstance.memory.buffer,
+        urlPtr,
+        urlLen,
+      );
+      const url = new TextDecoder().decode(urlBytes);
 
       // Fire off the fetch
-      const response = {};
-      fetch(url, Request)
-        .then((res) => {
-          response.code = res.status;
-          response.text = res.statusText;
-          response.type = res.type;
-          return res.text();
-        })
+      fetch(url)
+        .then((res) => res.text())
         .then((text) => {
           // Encode the response back into WASM memory
-          response.body = text;
-          const respString = JSON.stringify(response);
-          const ptr = allocString(respString); // assume you exposed an `alloc` func
+          const ptr = allocString(text); // assume you exposed an `alloc` func
 
           // Call back into Zig
           wasmInstance.resumeCallback(callback_id, ptr);
@@ -1054,7 +1047,6 @@ export const importObject = {
           // You could call callback with ptr=0,len=0 or export an error handler
         });
     },
-
     createChartWasm: (idPtr, idLen, configPtr, configLen) => {
       requestAnimationFrame(() => {
         const id = readWasmString(idPtr, idLen);

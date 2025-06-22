@@ -323,7 +323,6 @@ fn watchFiles(self: *WatchContext, chan: *Chan(u8)) !void {
 
             while (try walker.next()) |entry| {
                 const path = try std.fs.path.join(self.allocator, &.{ watch_path, entry.path });
-                // defer self.allocator.free(path);
 
                 if (!self.shouldWatch(path)) continue;
                 const stat = try fs.cwd().statFile(path);
@@ -331,7 +330,6 @@ fn watchFiles(self: *WatchContext, chan: *Chan(u8)) !void {
                 const stored_time = self.last_mod_times.get(path);
                 if (stored_time == null or stored_time.? != mod_time) {
                     changed_path = path;
-                    // std.debug.print("{s}\n", .{path});
                     try self.last_mod_times.put(path, mod_time);
                     changed = true;
                 }
@@ -546,3 +544,4 @@ pub fn main() !void {
     var watcher_thread = try std.Thread.spawn(.{}, watchFiles, .{ ctx, &chan });
     defer watcher_thread.join();
 }
+
