@@ -21,7 +21,7 @@ let wasmInstance = null;
 export const importObject = {
   wasi_snapshot_preview1: {
     proc_exit: (code) => {
-      console.error("Exiting with code:", code);
+      // console.error("Exiting with code:", code);
     },
     clock_time_get: (clockId, precision, resultPtr) => {
       // clock_time_get: (code) => {

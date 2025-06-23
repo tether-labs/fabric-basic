@@ -162,9 +162,8 @@ async function loadWasiModule() {
       if (exports._start) {
         try {
           exports._start(); // Triggers Zig's `main()`
-          console.log("Running main function");
         } catch (e) {
-          console.log("WASI exited:", e);
+          // console.log("WASI exited:", e);
         }
       }
 
@@ -178,7 +177,7 @@ async function loadWasiModule() {
     .then(() => {
       init(); // Your app initialization
     })
-    .catch("Eror", console.error);
+    .catch("Error", console.error);
 }
 
 async function initWasi() {
@@ -239,7 +238,6 @@ export const allocString = (string) => {
 
 export let root;
 async function init() {
-  console.log("Init");
   root = document.getElementById("contents");
 
   // Set up listener for back/forward buttons
@@ -405,7 +403,7 @@ async function init() {
   } else {
     route_ptr = allocString(currentPath);
   }
-  wasmInstance.renderCommands(route_ptr);
+  wasmInstance.renderUI(route_ptr);
   tree_node = wasmInstance.getRenderTreePtr();
 
   activeNodeIds = new Set();
@@ -428,7 +426,7 @@ async function init() {
   // } else {
   //   route_ptr = allocString(currentPath);
   // }
-  // wasmInstance.renderCommands(window.innerWidth, window.innerHeight, route_ptr);
+  // wasmInstance.renderUI(window.innerWidth, window.innerHeight, route_ptr);
   // tree_node = wasmInstance.getRenderTreePtr();
   // activeNodeIds = new Set();
   // traverse(root, tree_node, layoutInfo);
@@ -456,7 +454,7 @@ function renderLoop() {
       } else {
         route_ptr = allocString(currentPath);
       }
-      wasmInstance.renderCommands(route_ptr);
+      wasmInstance.renderUI(route_ptr);
       tree_node = wasmInstance.getRenderTreePtr();
       activeNodeIds = new Set();
       traverse(root, tree_node, layoutInfo);
