@@ -3,9 +3,7 @@ import {
   readRenderCommand,
   activeNodeIds,
   readWasmString,
-  encodeString,
   rerenderRoute,
-  root,
   allocString,
 } from "./wasi_obj.js";
 import {
@@ -60,6 +58,13 @@ const COMPONENT_TYPES = {
   SUBMIT_BUTTON_CTX: 39,
   HOOKS_CTX: 40,
   JSON_EDITOR: 41,
+  HTML_TEXT: 42,
+  CODE: 43,
+  SPAN: 44,
+  LAZY_IMAGE: 45,
+  INTERSECTION: 46,
+  PRE_IMAGE: 47,
+  TEXT_GRADIENT: 48,
 };
 
 // Store intervals by route for cleanup
@@ -262,7 +267,42 @@ function processInputElement(element, renderCmd) {
     });
   }
 }
+/* ───────── helpers ───────── */
+const isLayout = (el) => {
+  if (el && typeof el.id === "string" && el.id.includes("layout")) {
+    return true;
+  }
+  return false;
+};
 
+/**
+ * Delete a subtree while preserving any descendant whose id contains "layout".
+ * 1. DFS through children.
+ * 2. If a child is (or contains) a layout root, move it out before deleting.
+ * 3. Finally delete the now-layout-free wrapper node itself.
+ */
+function stripNonLayout(el) {
+  if (!el) return;
+
+  // Visit children first so we can hoist them before we nuke their parent
+  for (const child of Array.from(el.children)) {
+    if (isLayout(child)) {
+      // -- keep it alive: re-parent one level up
+      el.parentNode.insertBefore(child, el);
+      continue; // do NOT recurse into a preserved island
+    }
+    stripNonLayout(child); // recurse into non-layout child
+  }
+
+  // Now `el` has no layout descendants => safe to delete everything remaining
+  domNodeRegistry.delete(el.id);
+  if (el.localName === "p" || el.localName === "svg") {
+    el.remove();
+  } else {
+    el.replaceWith(...Array.from(el.childNodes));
+  }
+  // el.remove(); // removes element + any text nodes inside
+}
 /**
  * Create a link element with route handling
  * @param {Object} renderCmd - The render command
@@ -274,53 +314,51 @@ function createLinkElement(renderCmd, tree_node, layout) {
   const element = document.createElement("a");
   element.href = renderCmd.href;
 
-  element.addEventListener("click", function (event) {
+  const label = wasmInstance.getAriaLabel(renderCmd.nodePtr);
+  if (label) {
+    const length = wasmInstance.getAriaLabelLen();
+    element.ariaLabel = readWasmString(label, length);
+  }
+
+  element.addEventListener("click", function(event) {
     event.preventDefault();
 
-    const currentPath = window.location.pathname;
-    // clearIntervalsForRoute(currentPath);
-
     const clickedHref = event.currentTarget.href;
+
     const urlObj = new URL(clickedHref);
     const path = urlObj.pathname;
 
-    // root.innerHTML = "";
-    // this set the route render tree
-    // and marks all dirty
-    // let route_ptr = null;
-    // if (currentPath === "/") {
-    //   route_ptr = allocString("/root");
-    // } else {
-    //   route_ptr = allocString(currentPath);
-    // }
-
     // We first mark all non layout nodes as dirty this way we can traverse and remove
     // we use the dirty flag to indicate for removal
-    wasmInstance.markAllNonLayoutNodesDirty();
+    const count = wasmInstance.markAllNonLayoutNodesDirty();
+    /* ───────── main removal loop ───────── */
+    for (let i = 0; i < count; i++) {
+      const ptr = wasmInstance.getRemovedNode(i);
+      const len = wasmInstance.getRemovedNodeLength(i);
+      const id = readWasmString(ptr, len);
 
-    // wasmInstance.renderCommands(
-    //   window.innerWidth,
-    //   window.innerHeight,
-    //   route_ptr,
-    // );
+      const rec = domNodeRegistry.get(id);
+      if (!rec) continue; // already gone
+
+      const el = rec.domNode;
+      if (isLayout(el)) continue; // never delete a layout root itself
+
+      stripNonLayout(el); // delete everything *except* layouts
+    }
     // we get the current tree pointer and traverse it to remove all the nodes that are not part of the layout
-    const current_tree = wasmInstance.getRenderTreePtr();
-    traverseRemove(root, current_tree, layout);
-
-    // we push the state and renderCycle the new path
-    window.history.pushState({}, "", path);
+    window.history.pushState({}, "", clickedHref);
     rerenderRoute(path === "/" ? "/root" : path);
-
-    // const newTreeNode = wasmInstance.getRenderTreePtr();
-    // wasmInstance.markAllNonLayoutNodesDirty();
-    requestAnimationFrame(wasmInstance.setRerenderTrue);
-    // state.initial_render = true;
-    //
-    // activeNodeIds.clear();
-    // domNodeRegistry.clear();
-    // traverse(root, newTreeNode, layout);
-    // removeInactiveNodes();
-    // state.initial_render = false;
+    requestAnimationFrame(() => {
+      wasmInstance.setRerenderTrue();
+      requestAnimationFrame(() => {
+        const hash = window.location.hash;
+        if (hash) {
+          const id = window.location.hash.substring(1, hash.length);
+          const element = document.getElementById(id);
+          element.scrollIntoView();
+        }
+      });
+    });
   });
 
   return element;
@@ -550,7 +588,7 @@ function initJsonEditor(parent, element) {
  * @param {Object} layout - The layout information
  * @returns {HTMLElement} - The created element
  */
-function createElementByType(renderCmd, tree_node, layout) {
+function createElementByType(renderCmd, tree_node, layout, parent) {
   let element;
 
   switch (renderCmd.elemType) {
@@ -559,9 +597,32 @@ function createElementByType(renderCmd, tree_node, layout) {
       element.textContent = renderCmd.text;
       break;
 
+    case COMPONENT_TYPES.TEXT_GRADIENT:
+      element = document.createElement("p");
+      element.style["background"] =
+        "-webkit-linear-gradient(45deg, #E04F67, #C72C4A, #4800FF)";
+      element.style["-webkit-background-clip"] = "text";
+      element.style["-webkit-text-fill-color"] = "transparent";
+      element.textContent = renderCmd.text;
+      break;
+
     case COMPONENT_TYPES.TEXT_AREA:
       element = document.createElement("textarea");
       element.textContent = renderCmd.text;
+      break;
+
+    case COMPONENT_TYPES.HTML_TEXT:
+      element = document.createElement("p");
+      element.innerHTML = renderCmd.text;
+      break;
+
+    case COMPONENT_TYPES.CODE:
+      element = document.createElement("code");
+      break;
+
+    case COMPONENT_TYPES.SPAN:
+      element = document.createElement("span");
+      element.innerText = renderCmd.text;
       break;
 
     case COMPONENT_TYPES.JSON_EDITOR:
@@ -577,6 +638,22 @@ function createElementByType(renderCmd, tree_node, layout) {
     case COMPONENT_TYPES.IMAGE:
       element = document.createElement("img");
       element.src = renderCmd.href;
+      break;
+
+    case COMPONENT_TYPES.LAZY_IMAGE:
+      element = document.createElement("img");
+      element.setAttribute("src", renderCmd.href);
+      element.setAttribute("loading", "lazy");
+      break;
+
+    case COMPONENT_TYPES.PRE_IMAGE:
+      element = document.createElement("img");
+      element.setAttribute("src", renderCmd.href);
+      element.setAttribute("fetchpriority", "high");
+      break;
+
+    case COMPONENT_TYPES.INTERSECTION:
+      element = document.createElement("div");
       break;
 
     case COMPONENT_TYPES.FLEXBOX:
@@ -637,6 +714,11 @@ function createElementByType(renderCmd, tree_node, layout) {
     case COMPONENT_TYPES.BUTTON:
       element = document.createElement("button");
       element.type = "button";
+      const label = wasmInstance.getAriaLabel(renderCmd.nodePtr);
+      if (label) {
+        const length = wasmInstance.getAriaLabelLen();
+        element.ariaLabel = readWasmString(label, length);
+      }
       element.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -673,7 +755,15 @@ function createElementByType(renderCmd, tree_node, layout) {
 
     case COMPONENT_TYPES.SVG:
       element = document.createElement("div");
+      // // console.log(parent);
       element.innerHTML = renderCmd.text;
+      // const svgDoc = parser.parseFromString(renderCmd.text, "image/svg+xml");
+      // element = svgDoc.documentElement;
+      // element.className = "";
+      // const tempDiv = document.createElement("div");
+      // tempDiv.innerHTML = renderCmd.text;
+      // element = tempDiv.querySelector("svg");
+      // element = parent.querySelector('svg');
       break;
 
     case COMPONENT_TYPES.LINK:
@@ -701,7 +791,6 @@ function createElementByType(renderCmd, tree_node, layout) {
 
     case COMPONENT_TYPES.ICON:
       element = document.createElement("i");
-      element.className = renderCmd.href;
       break;
 
     case COMPONENT_TYPES.LIST:
@@ -771,9 +860,11 @@ function createElementByType(renderCmd, tree_node, layout) {
  */
 function setupElement(element, renderCmd) {
   element.id = renderCmd.id;
+  if (renderCmd.elemType === COMPONENT_TYPES.ICON) {
+    element.className = renderCmd.href;
+  }
 
   // Apply styles
-
   updateComponentStyle(
     renderCmd.nodePtr,
     renderCmd.styleId,
@@ -855,14 +946,15 @@ export function traverse(parent, tree_node, layout) {
     }
 
     if (renderCmd.isDirty) {
+      // console.log(renderCmd.isDirty, renderCmd.id);
       // Mark as processed
-      wasmInstance.setDirtyToFalse(renderCmd.nodePtr);
+      // wasmInstance.setDirtyToFalse(renderCmd.nodePtr);
 
       let element = document.getElementById(renderCmd.id);
 
       if (!element || state.initial_render) {
         // Create new element
-        element = createElementByType(renderCmd, tree_node, layout);
+        element = createElementByType(renderCmd, tree_node, layout, parent);
 
         if (!element) continue; // Skip if element creation failed
 
@@ -884,7 +976,7 @@ export function traverse(parent, tree_node, layout) {
           if (renderCmd.hooks.mountedId > 0) {
             wasmInstance.ctxHooksMountedCallback(renderCmd.hooks.mountedId);
           }
-        } else {
+        } else if (renderCmd.elemType === COMPONENT_TYPES.HOOKS) {
           if (renderCmd.hooks.mountedId > 0) {
             wasmInstance.hooksMountedCallback(renderCmd.hooks.mountedId);
           }
@@ -921,10 +1013,12 @@ export function traverseRemove(parent, tree_node, layout) {
     const renderCmd = readRenderCommand(rndcmd_ptr, layout);
 
     if (renderCmd.isDirty) {
+      // console.log("flkajsdfl;kajflkjafj", renderCmd.id);
       const node = domNodeRegistry.get(renderCmd.id);
       const el = node.domNode;
       domNodeRegistry.delete(renderCmd.id);
-      el.remove();
+      // el.remove();
+      el.replaceWith(...Array.from(el.childNodes));
       wasmInstance.setDirtyToFalse(renderCmd.nodePtr);
     }
   }

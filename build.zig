@@ -10,6 +10,13 @@ pub fn build(b: *std.Build) void {
         .preferred_optimize_mode = .ReleaseSmall,
     });
 
+    // Create a module for your config file
+    const user_config_module = b.addModule("user_config", .{
+        .root_source_file = b.path("config.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const fabric = b.dependency("fabric", .{
         .target = target,
         .optimize = optimize,
@@ -17,6 +24,7 @@ pub fn build(b: *std.Build) void {
 
     const fabric_module = fabric.module("fabric");
 
+    fabric_module.addImport("user_config", user_config_module);
     fabric_module.addImport("fabric", fabric_module);
 
     // We will also create a module for our other entry point, 'main.zig'.
@@ -31,6 +39,10 @@ pub fn build(b: *std.Build) void {
         .name = "fabric",
         .root_module = exe_mod,
     });
+
+    exe.root_module.addImport("user_config", b.addModule("user_config", .{
+        .root_source_file = b.path("config.zig"),
+    }));
 
     exe.rdynamic = true;
 

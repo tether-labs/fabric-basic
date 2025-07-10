@@ -75,9 +75,12 @@ export function updateComponentStyle(
   } else {
     // This is for icons
     className = element.className;
-    element.style = styleString;
+    // element.style = styleString;
     const newIndex = styleSheet.cssRules.length;
-    styleSheet.insertRule(`.${className} { ${styleString} }`, newIndex);
+    styleSheet.insertRule(
+      `.${className.split(" ").pop()} { ${styleString} }`,
+      newIndex,
+    );
     styleRuleCache.set(className, newIndex);
   }
 
@@ -144,7 +147,12 @@ export function applyHoverClass(element, styleId, hoverStyles) {
     selector = `.${element.className}:hover ${styleId.startsWith(".") ? styleId : "." + styleId}`;
   } else {
     // If no styleId, apply hover directly to the element
-    selector = `.${element.className}:hover`;
+    if (element.localName === "i") {
+      console.log();
+      selector = `.${element.className.split(" ").pop()}:hover`;
+    } else {
+      selector = `.${element.className}:hover`;
+    }
   }
 
   // Check if we already have this class

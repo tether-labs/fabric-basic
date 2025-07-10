@@ -1,55 +1,46 @@
 <!doctype html>
-<html>
-  <head>
-    <title>App</title>
-    <meta charset="utf-8" />
-    <meta
-      name="google-site-verification"
-      content="12aR_338F0VaglKbfvPLczdZV_Ej6AVx9Ef7M4ULfLU"
-    />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap"
-      rel="stylesheet"
-      crossorigin="anonymous"
-    />
-    <link
-      rel="icon"
-      href="/icon.svg"
-      type="image/svg+xml"
-    />
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css"
-      rel="stylesheet"
-    />
-  </head>
+<html lang="en">
 
-  <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-    }
+<head>
+  <title>Tether</title>
+  <meta charset="utf-8" />
+  <meta name="description"
+    content="Tether website includes documentation on all three components Fabric, Tether, and Treehouse. As well as instructions on installation and use cases." />
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preload" href="/zig-out/bin/fabric.wasm" as="fetch" type="application/wasm" crossorigin />
+</head>
 
-    table {
-      border-collapse: separate;
-      border-spacing: 0;
-    }
-  </style>
+<style>
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
 
-  <body
-    style="
+  p {
+    line-height: 1.5;
+    font-size-adjust: 0.5;
+  }
+
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+</style>
+
+<body style="
       margin: 0;
       padding: 0;
-      font-family: Montserrat;
       height: 100vh;
       width: 100%;
       box-sizing: border-box;
       flex-shrink: 0;
-    "
-  >
-    <div id="contents" style="display: contents"></div>
-    <base href="/" />
-    <script type="module" src="web/wasi_obj.js"></script>
-  </body>
+    ">
+  <div id="contents" style="display: contents"></div>
+  <base href="/" />
+  <script type="module" src="web/wasi_obj.js"></script>
+</body>
+
 </html>

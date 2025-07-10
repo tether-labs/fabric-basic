@@ -12,8 +12,16 @@ import {
   encodeString,
   rootNodeId,
   layoutInfo,
+  rerenderRoute,
+  root,
+  render,
+  requestRerender,
 } from "./wasi_obj.js";
-import { traverse, clearIntervalsForRoute } from "./traversal.js";
+import {
+  traverse,
+  clearIntervalsForRoute,
+  traverseRemove,
+} from "./traversal.js";
 import { state } from "./state.js";
 
 let wasmInstance = null;
@@ -95,12 +103,19 @@ export const importObject = {
     fd_close: () => 0,
     fd_seek: () => 0,
     fd_read: () => {
-      console.log("fakjsdhflkajsdhflkajsdfh;laksfj");
     },
     environ_sizes_get: () => 0,
     environ_get: () => 0,
   }, // Link WASI stubs
   env: {
+    /**
+     * Call this function whenever you want to trigger a re-render.
+     * It uses a flag to throttle calls to once per animation frame.
+     */
+    requestRerenderWasm: () => {
+      requestRerender();
+    },
+
     consoleLog: (ptr, len) => {
       if (!wasmInstance) {
         console.error("WASM instance not initialized");
@@ -182,9 +197,15 @@ export const importObject = {
         );
 
         const element = document.getElementById(elementId);
+        if (element === null) {
+          console.log("Is Null");
+          return;
+        }
+
         const event_type = new TextDecoder().decode(
           memory.subarray(ptr, ptr + len),
         );
+
         eventHandlers.set(`fb-inst-evt-hd-${id}-${elementId}`, (event) => {
           eventStorage[id] = event;
           wasmInstance.eventInstCallback(id);
@@ -209,6 +230,10 @@ export const importObject = {
         );
 
         const element = document.getElementById(elementId);
+        if (element === null) {
+          console.log("Is Null");
+          return;
+        }
         const event_type = new TextDecoder().decode(
           memory.subarray(ptr, ptr + len),
         );
@@ -551,7 +576,7 @@ export const importObject = {
 
     // Wrapper to make WASM s return promises
     zigFunctionReturningPromise(wasmInstance) {
-      return async function (arg1, arg2) {
+      return async function(arg1, arg2) {
         // Call the WASM function which returns a promise ID
         const promiseId = wasmInstance.exports.onMount(arg1, arg2);
 
@@ -587,7 +612,7 @@ export const importObject = {
         console.log(
           `Timeout complete, resuming with callback ID ${callbackId}`,
         );
-        wasmInstance.ctxButtonCallback(callbackId);
+        wasmInstance.timeoutCtxCallBackId(callbackId);
       }, ms);
     },
 
@@ -684,7 +709,7 @@ export const importObject = {
         return;
       }
 
-console.log(element);
+      console.log(element);
       element.click();
     },
     mutateDomElementStyleWasm: (
@@ -821,28 +846,29 @@ console.log(element);
       valuePtr,
       valueLen,
     ) => {
-      if (!wasmInstance) {
-        console.error("WASM instance not initialized");
-        return;
-      }
-      const memory = new Uint8Array(wasmInstance.memory.buffer);
-      const id = new TextDecoder().decode(
-        memory.subarray(idPtr, idPtr + idLen),
-      );
-      const attribute = new TextDecoder().decode(
-        memory.subarray(attributePtr, attributePtr + attributeLen),
-      );
-      const value = new TextDecoder().decode(
-        memory.subarray(valuePtr, valuePtr + valueLen),
-      );
-      const element = document.getElementById(id);
-      if (element === null) {
-        console.log("Is Null");
-        return;
-      }
+      requestAnimationFrame(() => {
+        if (!wasmInstance) {
+          console.error("WASM instance not initialized");
+          return;
+        }
+        const memory = new Uint8Array(wasmInstance.memory.buffer);
+        const id = new TextDecoder().decode(
+          memory.subarray(idPtr, idPtr + idLen),
+        );
+        const attribute = new TextDecoder().decode(
+          memory.subarray(attributePtr, attributePtr + attributeLen),
+        );
+        const value = new TextDecoder().decode(
+          memory.subarray(valuePtr, valuePtr + valueLen),
+        );
+        const element = document.getElementById(id);
+        if (element === null) {
+          console.log("Is Null");
+          return;
+        }
 
-      console.log(value, attribute);
-      element.style[attribute] = value;
+        element.style[attribute] = value;
+      });
     },
     mutateDomElementWasm: (idPtr, idLen, attributePtr, attributeLen, value) => {
       requestAnimationFrame(() => {
@@ -934,19 +960,21 @@ console.log(element);
 
     navigateWASM: (pathPtr, pathLen) => {
       const path = readWasmString(pathPtr, pathLen);
+      // We first mark all non layout nodes as dirty this way we can traverse and remove
+      // we use the dirty flag to indicate for removal
+      wasmInstance.markAllNonLayoutNodesDirty();
 
-      const currentPath = window.location.pathname;
-      clearIntervalsForRoute(currentPath);
+      // we get the current tree pointer and traverse it to remove all the nodes that are not part of the layout
+      const current_tree = wasmInstance.getRenderTreePtr();
+      traverseRemove(root, current_tree, layoutInfo);
 
+      // we push the state and renderCycle the new path
+      // window.history.pushState({}, "", path);
+      // we push the state and renderCycle the new path
       window.history.pushState({}, "", path);
+      rerenderRoute(path === "/" ? "/root" : path);
 
-      encodeString(path === "/" ? "/root" : path);
-      const rootElement = document.getElementById(rootNodeId);
-      rootElement.innerHTML = "";
-      const newTreeNode = wasmInstance.getRenderTreePtr();
-      state.initial_render = true;
-      traverse(rootElement, newTreeNode, layoutInfo);
-      state.initial_render = false;
+      requestAnimationFrame(wasmInstance.setRerenderTrue);
     },
 
     routePushWASM: (pathPtr, pathLen) => {
@@ -958,7 +986,6 @@ console.log(element);
       const endpoint = readWasmString(endpointPtr, endpointLen);
       const hookId = `${endpoint}-${id}`;
 
-      console.log(hookId);
       hooksHandlers.set(hookId, () => {
         wasmInstance.hookInstCallback(id);
       });
@@ -1172,20 +1199,6 @@ console.log(element);
           ta.style.borderColor = "red";
         }
       });
-
-      // // 7) Ctrl+S to download current content as .json file
-      // window.addEventListener("keydown", (e) => {
-      //   if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-      //     e.preventDefault();
-      //     const blob = new Blob([ta.value], { type: "application/json" });
-      //     const url = URL.createObjectURL(blob);
-      //     const a = document.createElement("a");
-      //     a.href = url;
-      //     a.download = "data.json";
-      //     a.click();
-      //     URL.revokeObjectURL(url);
-      //   }
-      // });
     },
   },
 };

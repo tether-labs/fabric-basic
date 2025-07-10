@@ -11,7 +11,7 @@ import {
   addKeyframesToStylesheet,
   checkMarkStyling,
 } from "./wasi_styling.js";
-import { traverse } from "./traversal.js";
+import { traverse, traverseRemove } from "./traversal.js";
 import { state } from "./state.js";
 
 export let wasmInstance;
@@ -128,18 +128,20 @@ function endDrag() {
 let layoutInfoPtr;
 
 window.addEventListener("popstate", async function(event) {
-  // Get current path from the URL
-  const pathname = window.location.pathname;
+  event.preventDefault();
+  const path = window.location.pathname;
+  // We first mark all non layout nodes as dirty this way we can traverse and remove
+  // we use the dirty flag to indicate for removal
+  wasmInstance.markAllNonLayoutNodesDirty();
 
-  // Process the route using the same logic
-  if (pathname === "/") {
-    encodeString("/root");
-  } else {
-    encodeString(pathname);
-  }
-  root.innerHTML = "";
-  tree_node = wasmInstance.getRenderTreePtr();
-  traverse(root, tree_node, layoutInfo);
+  // we get the current tree pointer and traverse it to remove all the nodes that are not part of the layout
+  const current_tree = wasmInstance.getRenderTreePtr();
+  traverseRemove(root, current_tree, layoutInfo);
+
+  // we push the state and renderCycle the new path
+  // window.history.pushState({}, "", path);
+  rerenderRoute(path === "/" ? "/root" : path);
+  requestAnimationFrame(wasmInstance.setRerenderTrue);
 });
 
 window.addEventListener("load", async () => {
@@ -166,8 +168,6 @@ async function loadWasiModule() {
           // console.log("WASI exited:", e);
         }
       }
-
-      // Use exported functions
 
       moduleCache.set(pathname, exports);
       moduleRoutes.add(pathname);
@@ -376,25 +376,6 @@ async function init() {
     }
   }
 
-  // const pathname = window.location.pathname;
-  // if (pathname === "/") {
-  //   encodeString("/root");
-  // } else {
-  //   encodeString(pathname);
-  // }
-
-  // for (const [key, handler] of hooksHandlers.entries()) {
-  //   const pathEnd = key.indexOf("-");
-  //   const path = key.substring(0, pathEnd);
-  //   if (path === "/nightwatch/auth") {
-  //     handler();
-  //   } else if (path === "*") {
-  //     handler();
-  //   }
-  // }
-
-  // tree_node = wasmInstance.getRenderTreePtr();
-
   root.style.width = "100%";
   root.style.height = "100vh";
   const currentPath = window.location.pathname;
@@ -404,6 +385,7 @@ async function init() {
     route_ptr = allocString(currentPath);
   }
   wasmInstance.renderUI(route_ptr);
+  wasmInstance.markCurrentTreeDirty();
   tree_node = wasmInstance.getRenderTreePtr();
 
   activeNodeIds = new Set();
@@ -412,48 +394,59 @@ async function init() {
   wasmInstance.pendingClassesToAdd();
   wasmInstance.pendingClassesToRemove();
   document.body.appendChild(root);
-
-  // initEditor();
-
-  // the reason we have this here, is since at the creation of each page we load and add the buttons context,
-  // hence the ids for each button are tied to all pages, for example lets say we render the navbar in /auth thne the ctx btns
-  // are rendered with id 1,2,3, and lets say we render navbar, is /routes then the ctx ids are 4,5,6 hence if we clear and remove,
-  // all the ctx then since we arent recreating the navbar ctx routes, then when we render /routes it uses 4,5,6 event though the new render
-  // tree ctx registry has id 1,2,3, this needs to be optimized and improved, perhaps use node uuids instead, but be carful with this
-  // const currentPath = window.location.pathname;
-  // if (currentPath === "/") {
-  //   route_ptr = allocString("/root");
-  // } else {
-  //   route_ptr = allocString(currentPath);
-  // }
-  // wasmInstance.renderUI(window.innerWidth, window.innerHeight, route_ptr);
-  // tree_node = wasmInstance.getRenderTreePtr();
-  // activeNodeIds = new Set();
-  // traverse(root, tree_node, layoutInfo);
-  // console.log("Finished rerendering ------------------------------------- ");
-  // wasmInstance.pendingClassesToAdd();
-  // wasmInstance.pendingClassesToRemove();
-  // callDestroyFncs();
-  // removeInactiveNodes();
-  // wasmInstance.resetRerender();
-  // requestAnimationFrame(wasmInstance.cleanUp);
+  wasmInstance.markCurrentTreeNotDirty();
   wasmInstance.resetRerender();
+  const hash = window.location.hash;
+  if (hash) {
+    const id = window.location.hash.substring(1, hash.length);
+    const element = document.getElementById(id);
+    element.scrollIntoView();
+  }
 
-  renderLoop();
+  // Super simple lazy loading
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        // entry.target.classList.add("loaded");
+        observer.unobserve(entry.target);
+      }
+    });
+  });
+
+  // Find all elements with id="lazy" and observe them
+  document.querySelectorAll('[id*="Inte"]').forEach((element) => {
+    observer.observe(element);
+  });
 }
 
 let route_ptr = null;
-function renderLoop() {
+
+export function requestRerender() {
+  if (!state.isRenderScheduled) {
+    state.isRenderScheduled = true;
+    requestAnimationFrame(render);
+  }
+}
+
+export function render() {
+  // Reset the flag since the scheduled render is now running.
+  state.isRenderScheduled = false;
+
   const globalRerender = wasmInstance.shouldRerender();
   const grainRerender = wasmInstance.grainRerender();
+
+  // Exit if no re-render is needed.
+  if (!globalRerender && !grainRerender) {
+    return;
+  }
+
   try {
     if (globalRerender) {
       const currentPath = window.location.pathname;
-      if (currentPath === "/") {
-        route_ptr = allocString("/root");
-      } else {
-        route_ptr = allocString(currentPath);
-      }
+      const route_ptr = allocString(
+        currentPath === "/" ? "/root" : currentPath,
+      );
+
       wasmInstance.renderUI(route_ptr);
       tree_node = wasmInstance.getRenderTreePtr();
       activeNodeIds = new Set();
@@ -463,26 +456,17 @@ function renderLoop() {
       wasmInstance.pendingClassesToRemove();
       callDestroyFncs();
       removeInactiveNodes();
+      wasmInstance.markCurrentTreeNotDirty();
       wasmInstance.resetRerender();
       requestAnimationFrame(wasmInstance.cleanUp);
-    } else if (grainRerender) {
+    } else {
+      // This implies grainRerender is true
       console.log("Grain Rerender");
-      tree_node = wasmInstance.getRenderTreePtr();
-      activeNodeIds = new Set();
-      traverse(root, tree_node, layoutInfo);
-      wasmInstance.pendingClassesToAdd();
-      wasmInstance.pendingClassesToRemove();
-      callDestroyFncs();
-      removeInactiveNodes();
-      wasmInstance.resetGrainRerender();
     }
-    requestAnimationFrame(renderLoop);
   } catch (error) {
-    console.error("Render loop error:", error);
-    // Optionally, implement error recovery or loop stopping mechanism
+    console.error("An error occurred during the render cycle:", error);
   }
 }
-
 export function callDestroyFncs() {
   // Remove any nodes that aren't active in this render
   domNodeRegistry.forEach((node, nodeId) => {
@@ -742,23 +726,6 @@ export function readRenderCommand(offset, layout) {
 export function readWasmString(ptr, len) {
   const bytes = new Uint8Array(wasmInstance.memory.buffer, ptr, len);
   return new TextDecoder().decode(bytes);
-}
-
-// Check if memory is growing over time
-function getWasmMemoryUsage() {
-  const memory = wasmInstance.memory;
-  return memory.buffer.byteLength;
-}
-let lastMemorySize = 0;
-function checkMemoryGrowth() {
-  const currentSize = getWasmMemoryUsage();
-  console.log(`Memory size: ${currentSize / 1024 / 1024} MB`);
-  if (currentSize > lastMemorySize) {
-    console.log(
-      `Memory increased by ${(currentSize - lastMemorySize) / 1024} KB`,
-    );
-  }
-  lastMemorySize = currentSize;
 }
 
 initWasi();

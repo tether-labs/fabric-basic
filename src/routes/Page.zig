@@ -7,12 +7,7 @@ const Style = Fabric.Style;
 var counter: Signal(u32) = undefined;
 pub fn init() void {
     counter.init(0);
-    Fabric.Page(@src(), render, null, Style.apply(.{
-        .width = .percent(1),
-        .height = .percent(1),
-        .direction = .column,
-        .child_alignment = .{ .y = .center, .x = .start },
-    }));
+    Fabric.Page(@src(), render, null, .{});
 }
 
 fn increment() void {
@@ -20,14 +15,14 @@ fn increment() void {
 }
 
 pub fn render() void {
-    Static.FlexBox(.{
+    Static.Center(.{
         .height = .percent(100),
         .width = .percent(100),
         .direction = .column,
         .child_gap = 16,
     })({
         Static.Svg(@embedFile("Logo.svg"), .{
-            .width = .fixed(600),
+            .width = .px(600),
         });
         Static.FlexBox(.{})({
             Static.Text("Rank ", .{
@@ -47,11 +42,11 @@ pub fn render() void {
             Static.BtnProps{
                 .onPress = increment,
             },
-            Style.apply(.{
+            Style.override(.{
                 .padding = .all(8),
                 .border_thickness = .all(1),
-                .width = .fixed(120),
-                .height = .fixed(40),
+                .width = .px(120),
+                .height = .px(40),
             }),
         )({
             Static.Text("Increment", .{
